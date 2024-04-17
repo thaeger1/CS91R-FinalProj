@@ -1,14 +1,16 @@
 let _width = 800;
 let _height = 600;
 
-let g = 9.81
-let cellSize = 25;  // keep rect width/height in mind when adjusting
-let num_ptc = 250;
+let g = 9.81;
 
 let rect_w = 500;
 let rect_h = 300;
-let speed = 20;
-let r = 3;          // ptc radius
+let speed = 10;
+
+let flipRatio = 0.9;
+let cellSize = 25;
+let num_ptc = 1500;
+let r = 5;          // ptc radius
 
 let pv = [];        // list of vectors that represent our particles
 let pr = [];        // r is position, v is velocity
@@ -17,7 +19,7 @@ let objGrid = [];   // 2d array for our grid, store as collocated, treat as stag
 let velGrid = [];
 let lastVel = [];
 let rGrid   = [];
-// let ptcGrid = [];
+let ptcGrid = [];
 
 // TODO: replace with p5.js preload function
 let time_buff = 10; // increase for more "startup" time
@@ -27,8 +29,6 @@ let minY = (_height - rect_h)/2;
 let maxX = _width - (_width - rect_w)/2;
 let maxY = _height - (_height - rect_h)/2;
 
-let flipRatio = 0.4;
-
 function setup() {
   createCanvas(_width, _height);
   fill(255);
@@ -36,14 +36,10 @@ function setup() {
 
   frameRate(30);
 
-  // init objGrid here
   initObjGrid();
-  // init velGrid here
   initVelGrid();
-  // init particles
+  initPtcGrid();
   initParticles(num_ptc);
-
-  vZero = new p5.Vector(0,0);
 }
 
 function draw() {
@@ -60,6 +56,7 @@ function draw() {
   if (key == 'v') drawVel();
 
   /// PHYSICS SIM ///
+  clearPtcGrid();
   clearTank();
 
   // simulate particles //
@@ -67,15 +64,20 @@ function draw() {
     updateParticle(i, dt*speed);
   }
 
-  //--
+  for (let i = 0; i < num_ptc; i++) {
+    pushPtc(i);
+  }
+
+  for (let i = 0; i < num_ptc; i++) {
+    handleCollisions(i);
+  }
+
   // particles -> grid : velocities //
   ptcToGrid();
 
-  //--
   // make velocities incompressible //
   ForceIncompressability();
 
-  //--
   // grid -> particles : velocities //
   gridToPtc();
 
@@ -85,23 +87,6 @@ function draw() {
   for (let i = 0; i < num_ptc; i++) {
     fill(0,0,255); stroke(255); strokeWeight(0.5); ellipse(pr[i].x, pr[i].y, r, r);
   }
-}
-
-function pushPtc() {
-  // for each other particle in the cell with me
-    // get other ptc x,y
-    // check if we are overlapping (find dx, dy)
-    // if we are
-      // d = sqrt(dist)
-      // s = 0.5 * (min dist - d) / d
-      // dx *= s;
-      // dy *= s;
-
-      // move both ptc by dx, dy
-      // ptc.i -= dx, dy
-      // ptc.j += dx, dy
-
-      // color stuff
 }
 
 function ptcToGrid() {
@@ -327,37 +312,79 @@ function ForceIncompressability() {
   }
 }
 
-function updateParticle(index, dt) {
-  pv[index] = p5.Vector.add(pv[index],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-  pr[index] = p5.Vector.add(pr[index],pv[index].mult(dt)); // update position, r = r + dt * v
+function updateParticle(idx, dt) {
+  pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
+  pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
 
-  // console.log(pr[index]);
-  if (pr[index].x < minX) {
-    console.log("x too small");
-    pr[index].x = minX+1;
-    pv[index].x = 0;
-  }
-  if (pr[index].x > maxX) {
-    console.log("x too big");
-    pr[index].x = maxX-1;
-    pv[index].x = 0;
-  }
-  if (pr[index].y < minY+1) {
-    // console.log("y too small");
-    pr[index].y = minY+1;
-    pv[index].y = 0;
-  }
-  if (pr[index].y > maxY-1) {
-    // console.log("y too big");
-    pr[index].y = maxY-1;
-    pv[index].y = 0;
-  }
+  let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize-1);
+  let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize-1);
 
-  let cell_x = floor((pr[index].x - (_width - rect_w)/2) / cellSize)+1;
-  let cell_y = floor((pr[index].y - (_height - rect_h)/2) / cellSize)+1;
   if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
 
-  // update what cell i am in on the ptc grid (need to make a way to lookup ptc in space)
+  if (objGrid[cell_x][cell_y] == 1) ptcGrid[cell_x][cell_y].push(idx);
+}
+
+let dMin = r*1.5;
+let iter = 5;
+function pushPtc(idx) {
+  for (let i = 0; i < iter; i++) {
+    let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize-1);
+    let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize-1);
+
+    let x0 = max(cx-1,0);
+    let x1 = min(cx+1,rect_w/cellSize);
+    let y1 = max(cy+1,0);
+    let y0 = min(cy-1,rect_h/cellSize);
+    
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        for (let j = 0; j < ptcGrid[x][y].length; j++) {
+          if (ptcGrid[x][y][j] == idx) continue;
+    
+          let dx = pr[j].x - pr[idx].x;
+          let dy = pr[j].y - pr[idx].y;
+          let dsq = dx*dx + dy*dy;
+          if (dsq > dMin*dMin || dsq == 0) continue;
+    
+          let d = sqrt(dsq);
+          let s = .5*(dMin-d)/d;
+          dx *= s;
+          dy *= s;
+    
+          pr[idx].x -= dx;
+          pr[idx].y -= dy;
+    
+          pr[j].x += dx;
+          pr[j].y += dy;
+    
+          // color stuff
+        }
+      }
+    }
+  }
+}
+
+function handleCollisions(idx) {
+  if (pr[idx].x < minX) {
+    // console.log("x too small");
+    pr[idx].x = minX+1;
+    // pv[idx].x = 0;
+  }
+  if (pr[idx].x > maxX) {
+    // console.log("x too big");
+    pr[idx].x = maxX-1;
+    // pv[idx].x = 0;
+  }
+  if (pr[idx].y < minY+1) {
+    // console.log("y too small");
+    pr[idx].y = minY+1;
+    // pv[idx].y = 0;
+  }
+  if (pr[idx].y > maxY-1) {
+    // console.log("y too big");
+    pr[idx].y = maxY-1;
+    // pv[idx].y = 0;
+  }
 }
 
 function clearTank() {
@@ -369,7 +396,7 @@ function clearTank() {
   }
 }
 
-let buffer = 0;
+let buffer = 2;
 function initParticles(num_ptc) {
   // for num particles
   for (let i = 0; i < num_ptc; i++) { 
@@ -454,6 +481,24 @@ function initObjGrid() {
       } else {
         objGrid[x][y] = undefined; // we want 0 for walls, 1 for water, and undefined for air
       }
+    }
+  }
+}
+
+function initPtcGrid() {
+  for (let i = 0; i < objGrid.length; i++) {
+    ptcGrid[i] = [];
+    for (let j = 0; j < objGrid[i].length; j++) {
+      ptcGrid[i][j] = [];
+    }
+  }
+}
+
+function clearPtcGrid() {
+  for (let i = 0; i < objGrid.length; i++) {
+    // ptcGrid[i] = [];
+    for (let j = 0; j < objGrid[i].length; j++) {
+      ptcGrid[i][j].length = 0;
     }
   }
 }
