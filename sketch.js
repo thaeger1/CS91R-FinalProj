@@ -1,40 +1,65 @@
 let _width = 800;
 let _height = 600;
 
-let g = 9.81;
-
-let rect_w = 500;
-let rect_h = 300;
-let speed = 10;
-
-let flipRatio = 0.9;
-let cellSize = 25;
-let num_ptc = 1500;
-let r = 5;          // ptc radius
-
 let pv = [];        // list of vectors that represent our particles
 let pr = [];        // r is position, v is velocity
+let pc = [];
 
-let objGrid = [];   // 2d array for our grid, store as collocated, treat as staggered
-let velGrid = [];
-let lastVel = [];
-let rGrid   = [];
-let ptcGrid = [];
+let objGrid  = [];   // 2d array for our grid, store as collocated, treat as staggered
+let velGrid  = [];
+let lastVel  = [];
+let rGrid    = [];
+let ptcGrid  = [];
+let densGrid = [];
 
 // TODO: replace with p5.js preload function
 let time_buff = 10; // increase for more "startup" time
 
+// water tank dimensions
+let rect_w = 400;
+let rect_h = 200;
+
+// handleCollisions
 let minX = (_width - rect_w)/2;
 let minY = (_height - rect_h)/2;
 let maxX = _width - (_width - rect_w)/2;
 let maxY = _height - (_height - rect_h)/2;
 
+// simulator vars
+let g = 100;
+let flipRatio = .9;
+let cellSize = 10;
+let num_ptc = 1000;
+let r = 0.3 * cellSize;
+let pressureIter = 50;
+
+let substep = 2;
+let speed = 1;
+
+// force incompressibility
+let o = 1.9;
+
+// push ptc
+let dMin = 2 * r;
+let iter = 3;
+
+// draw vel
+let max_vel = 1;
+
+// init ptc
+let lbuffer = 0;
+let rbuffer = 10;
+let ybuffer = 5;
+
+// NOTES: This function initializes the canvas, the tank, and any arrays we need to store data.
+  // It also initializes our particles before simulating, so we can change what type of scenario we
+  // want to simulate in here by changing / calling initParticles()
 function setup() {
   createCanvas(_width, _height);
   fill(255);
   noStroke();
 
-  frameRate(30);
+  frameRate(60);
 
   initObjGrid();
   initVelGrid();
@@ -42,8 +67,8 @@ function setup() {
   initParticles(num_ptc);
 }
 
+let dt = 1 / 60;
 function draw() {
-  let dt = 1/frameRate();
   if (frameCount < time_buff) return; 
 
   background(228,202,159); // #savebeige
@@ -56,36 +81,49 @@ function draw() {
   if (key == 'v') drawVel();
 
   /// PHYSICS SIM ///
-  clearPtcGrid();
-  clearTank();
+  // let sdt = dt / substep;
 
-  // simulate particles //
-  for (let i = 0; i < num_ptc; i++) {
-    updateParticle(i, dt*speed);
+  for (let k = 0; k < substep; k++) {
+    clearPtcGrid();
+    clearTank();
+    clearDens();
+
+    // simulate particles //
+    for (let i = 0; i < num_ptc; i++) {
+      updateParticle(i, dt/substep);
+    }
+
+    for (let i = 0; i < num_ptc; i++) {
+      pushPtc(i);
+    }
+
+    for (let i = 0; i < num_ptc; i++) {
+      handleCollisions(i);
+    }
+
+    // particles -> grid : velocities //
+    ptcToGrid();
+
+    // update density //
+    updateDensity();
+
+    // make velocities incompressible //
+    ForceIncompressability();
+
+    // grid -> particles : velocities //
+    gridToPtc();
   }
-
-  for (let i = 0; i < num_ptc; i++) {
-    pushPtc(i);
-  }
-
-  for (let i = 0; i < num_ptc; i++) {
-    handleCollisions(i);
-  }
-
-  // particles -> grid : velocities //
-  ptcToGrid();
-
-  // make velocities incompressible //
-  ForceIncompressability();
-
-  // grid -> particles : velocities //
-  gridToPtc();
 
   /// END PHYSICS SIM ///
 
+  // if mouse down
+    // push outwards from cell clicked
+
+  doColors();
+
   // draw all of our particles
   for (let i = 0; i < num_ptc; i++) {
-    fill(0,0,255); stroke(255); strokeWeight(0.5); ellipse(pr[i].x, pr[i].y, r, r);
+    fill(pc[3*i],pc[3*i+1],pc[3*i+2]); stroke(255); strokeWeight(0.5); ellipse(pr[i].x, pr[i].y, r, r);
   }
 }
 
@@ -104,7 +142,7 @@ function ptcToGrid() {
       let tx = (pr[i].x - (_width - rect_w)/2);
       let ty = (pr[i].y - (_height - rect_h)/2);
       tx -= (axis)  ? (cellSize/2) : 0;
-      ty += (!axis) ? (cellSize/2) : 0;
+      ty += (axis) ?  0 : (cellSize/2);
       let cell_x = floor(tx/cellSize)+1;
       let cell_y = floor(ty/cellSize)+1;
 
@@ -161,8 +199,8 @@ function gridToPtc() {
 
       let tx = (pr[i].x - (_width - rect_w)/2);
       let ty = (pr[i].y - (_height - rect_h)/2);
-      tx -= (axis)  ? (cellSize/2) : 0;
-      ty += (!axis) ? (cellSize/2) : 0;
+      tx -= (axis) ? (cellSize/2) : 0;
+      ty += (axis) ? 0 : (cellSize/2);
 
       let cell_x = floor(tx/cellSize)+1;
       let cell_y = floor(ty/cellSize)+1;
@@ -207,6 +245,7 @@ function gridToPtc() {
         let qpFLIP = sumqFLIP / sumw;
 
         pv[i].x = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
+        // if (i == 0) console.log(pv[i].x);
 
         // pv[i].x = qpPIC;
 
@@ -242,23 +281,8 @@ function gridToPtc() {
   }
 }
 
-let o = 1.9;
-/* where we calculate divergence
+function ForceIncompressability(dt) {
 
-    // ||======================||
-    // ||          | v_i,j+1   ||
-    // ||          v           ||
-    // || u_ij ->   <- u_i+1,j ||
-    // ||         ^            ||
-    // ||    v_ij |            ||
-    // ||======================||
-
-    // pointing in means positive inflow, pointing out mean negative inflow
-    // sign flips to account for inflow/outflow directions
-    // divergence = u_i+1,j - u_ij + v_i,j+1 - v_ij
-
-*/
-function ForceIncompressability() {
   // update lastVel
   for (let i = 0; i < velGrid.length; i++) {
     for (let j = 0; j < velGrid[i].length; j++) {
@@ -266,48 +290,42 @@ function ForceIncompressability() {
     }
   }
 
-  for (let x = 1; x < velGrid.length-1; x++) {
-    for (let y = 1; y < velGrid[y].length-1; y++) {
-      if (objGrid[x][y] != 1) continue;
-      /* get 4 components around the cell,
-        u_i,j   = velGrid[x][y].x;   (u left, or bl)
-        v_i,j   = velGrid[x][y].y;   (v bot, or vb)
-        u_i+1,j = velGrid[x+1][y].x; (u right, or ur)
-        v_i,j+1 = velGrid[x][y+1].y; (v top, or vt)
-      */
-      let ul = velGrid[x][y].x;
-      let vb = velGrid[x][y].y;
-      let ur = velGrid[x+1][y].x;
-      let vt = velGrid[x][y-1].y;
+  for (let i = 0; i < pressureIter; i++) {
+    for (let x = 1; x < velGrid.length-1; x++) {
+      for (let y = 1; y < velGrid[y].length-1; y++) {
+        if (objGrid[x][y] != 1) continue;
 
-      // find divergence d = u_i+1,j - u_ij + v_i,j+1 - v_ij
-      let _d = o*(ur - ul + vt - vb);
+        let ul = velGrid[x][y].x;
+        let vb = velGrid[x][y].y;
+        let ur = velGrid[x+1][y].x;
+        let vt = velGrid[x][y-1].y;
 
-      // assuming 0 = wall and 1 = liquid (air and water), _s = s_i+1,j + s_i-1,j + s_i,j+1 + s_i,j-1
-      let _s1 = (objGrid[x+1][y] != 0) ? 1 : 0;
-      let _s2 = (objGrid[x-1][y] != 0) ? 1 : 0;
-      let _s3 = (objGrid[x][y+1] != 0) ? 1 : 0;
-      let _s4 = (objGrid[x][y-1] != 0) ? 1 : 0;
-      let _s = _s1 + _s2 + _s3 + _s4;
-      if (_s == 0) continue;
+        // find divergence d = u_i+1,j - u_ij + v_i,j+1 - v_ij
+        let _d = ur - ul + vt - vb;
 
-      // add/sub d
-      ul += (_s2 * _d) / _s;
-      vb += (_s3 * _d) / _s;
-      ur -= (_s1 * _d) / _s;
-      vt -= (_s4 * _d) / _s;
+        // assuming 0 = wall and 1 = liquid (air and water), _s = s_i+1,j + s_i-1,j + s_i,j+1 + s_i,j-1
+        let _s1 = (objGrid[x+1][y] != 0) ? 1 : 0;
+        let _s2 = (objGrid[x-1][y] != 0) ? 1 : 0;
+        let _s3 = (objGrid[x][y+1] != 0) ? 1 : 0;
+        let _s4 = (objGrid[x][y-1] != 0) ? 1 : 0;
+        let _s = _s1 + _s2 + _s3 + _s4;
+        if (_s == 0) continue;
 
-      // console.log(_d);
-      // if (ur - vb - ul + vt != 0) {
-      //   console.log("uh oh");
-      //   console.log(x,y,vb,vt,_s);
-      // }
+        if (particleRestDens > 0) {
+          var k = 1;
+          var comp = densGrid[x][y] - particleRestDens;
+          if (comp > 0) _d = _d - k * comp;
+        }
 
-      // write back to velGrid
-      velGrid[x][y].x   = ul;
-      velGrid[x][y].y   = vb;
-      velGrid[x+1][y].x = ur;
-      velGrid[x][y-1].y = vt;
+        let p = -_d / _s;
+        p *= o;
+
+        // write back to velGrid
+        velGrid[x][y].x   -= _s2 * p; //ul
+        velGrid[x][y].y   -= _s3 * p; //vb
+        velGrid[x+1][y].x += _s1 * p; //ur
+        velGrid[x][y-1].y += _s4 * p; //vt
+      }
     }
   }
 }
@@ -316,76 +334,173 @@ function updateParticle(idx, dt) {
   pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
   pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
 
-  let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize-1);
-  let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize-1);
+  let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+  let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
 
   if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
 
-  if (objGrid[cell_x][cell_y] == 1) ptcGrid[cell_x][cell_y].push(idx);
+  // if (objGrid[cell_x][cell_y] == 1) 
+  ptcGrid[cell_x][cell_y].push(idx);
 }
 
-let dMin = r*1.5;
-let iter = 5;
+
 function pushPtc(idx) {
   for (let i = 0; i < iter; i++) {
-    let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize-1);
-    let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize-1);
 
+    let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+    let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+
+    // let cx = floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1;
+    // let cy = floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1;
+  
     let x0 = max(cx-1,0);
-    let x1 = min(cx+1,rect_w/cellSize);
-    let y1 = max(cy+1,0);
-    let y0 = min(cy-1,rect_h/cellSize);
+    let x1 = min(cx+1,rect_w/cellSize+1);
+    
+    let y0 = max(cy-1,0);
+    let y1 = min(cy+1,rect_h/cellSize+1);
     
     for (let x = x0; x <= x1; x++) {
       for (let y = y0; y <= y1; y++) {
         for (let j = 0; j < ptcGrid[x][y].length; j++) {
-          if (ptcGrid[x][y][j] == idx) continue;
+          let oidx = ptcGrid[x][y][j];
+          if (oidx == idx) continue;
+          
     
-          let dx = pr[j].x - pr[idx].x;
-          let dy = pr[j].y - pr[idx].y;
+          let dx = pr[oidx].x - pr[idx].x;
+          let dy = pr[oidx].y - pr[idx].y;
           let dsq = dx*dx + dy*dy;
-          if (dsq > dMin*dMin || dsq == 0) continue;
-    
+          if (dsq > dMin*dMin || dsq == 0) {
+            continue;
+          }
+          
           let d = sqrt(dsq);
           let s = .5*(dMin-d)/d;
           dx *= s;
           dy *= s;
-    
+
           pr[idx].x -= dx;
           pr[idx].y -= dy;
     
-          pr[j].x += dx;
-          pr[j].y += dy;
-    
-          // color stuff
+          pr[oidx].x += dx;
+          pr[oidx].y += dy;
+
+          pc[3*idx]    = (pc[3*idx] + pc[3*oidx])/2;
+          pc[3*oidx]   = (pc[3*idx] + pc[3*oidx])/2;
+          pc[3*idx+1]  = (pc[3*idx+1] + pc[3*oidx+1])/2;
+          pc[3*oidx+1] = (pc[3*idx+1] + pc[3*oidx+1])/2;
+          pc[3*idx+2]  = (pc[3*idx+2] + pc[3*oidx+2])/2;
+          pc[3*oidx+2] = (pc[3*idx+2] + pc[3*oidx+2])/2;
         }
       }
     }
   }
 }
 
+
+function doColors() {
+  let h1 = 1 / cellSize;
+
+  for (let i = 0; i < num_ptc; i++) {
+    let ds = 1;
+
+    pc[3*i]   = constrain(pc[3*i] - ds, 0, 255);
+    pc[3*i+1] = constrain(pc[3*i+1] - ds, 0, 255);
+    pc[3*i+2] = constrain(pc[3*i+2] + ds, 0, 255);
+
+    let xi = constrain(floor((pr[i].x - (_width - rect_w)/2) / cellSize), 1, rect_w/cellSize);
+    let yi = constrain(floor((pr[i].y - (_height - rect_h)/2) / cellSize), 1, rect_h/cellSize);
+
+    if (particleRestDens > 0) {
+      let relDens = densGrid[xi][yi] / particleRestDens;
+      // if (i == 0) console.log(particleRestDens, relDens, densGrid[xi][yi]);
+      if (relDens < 0.5) {
+        pc[3*i]   = 200;
+        pc[3*i+1] = 200;
+        pc[3*i+2] = 255;
+      }
+    }
+  }
+}
+
+
 function handleCollisions(idx) {
-  if (pr[idx].x < minX) {
+  if (pr[idx].x < minX+r/2) {
     // console.log("x too small");
-    pr[idx].x = minX+1;
+    pr[idx].x = minX + r/2;
+    pv[idx].x *= -1;
     // pv[idx].x = 0;
   }
-  if (pr[idx].x > maxX) {
+  if (pr[idx].x > maxX-r/2) {
     // console.log("x too big");
-    pr[idx].x = maxX-1;
+    pr[idx].x = maxX - r/2;
+    pv[idx].x *= -1;
     // pv[idx].x = 0;
   }
-  if (pr[idx].y < minY+1) {
+  if (pr[idx].y < minY+r/2) {
     // console.log("y too small");
-    pr[idx].y = minY+1;
+    pr[idx].y = minY + r/2;
+    pv[idx].y *= -1;
     // pv[idx].y = 0;
   }
-  if (pr[idx].y > maxY-1) {
+  if (pr[idx].y > maxY-r/2) {
     // console.log("y too big");
-    pr[idx].y = maxY-1;
+    pr[idx].y = maxY - r/2;
+    pv[idx].y *= -1;
     // pv[idx].y = 0;
   }
 }
+
+let particleRestDens = 0;
+function updateDensity() {
+  let h = cellSize;
+  let h1 = 1/h;
+  let h2 = .5 * h;
+
+  // for each ptc
+  for (let i = 0; i < num_ptc; i++) {
+    // get x, y & clamp to cells
+    let x = constrain(pr[i].x-(_width-rect_w)/2,0,rect_w);
+    let y = constrain(pr[i].y-(_height-rect_h)/2,0,rect_h);
+
+    let x0 = floor((x-h2) * h1);
+    let tx = ((x - h2) - x0 * h) * h1;
+    let x1 = min(x0 + 1, densGrid.length-2);
+    // if (i == 0) console.log(x, x0, tx, x1);
+    if (x0 < 0 || x0 >= densGrid.length-1) continue;
+
+    let y0 = floor((y-h2)*h1);
+    let ty = ((y - h2) - y0*h) * h1;
+    let y1 = min (y0 + 1, densGrid[x0].length-2);
+    // if (i == 0) console.log(y,y0,ty,y1);
+
+    let sx = 1 - tx;
+    let sy = 1 - ty;
+
+    if (x0 < _width/cellSize & y0 < _height/cellSize) densGrid[x0][y0] += sx * sy;
+    if (x1 < _width/cellSize & y1 < _height/cellSize) densGrid[x1][y0] += tx * sy;
+    if (x1 < _width/cellSize & y1 < _height/cellSize) densGrid[x1][y1] += tx * ty;
+    if (x0 < _width/cellSize & y0 < _height/cellSize) densGrid[x0][y1] += sx * ty;
+    // if (i == 0) console.log(densGrid[x0][y0]);
+  }
+
+  if (particleRestDens == 0) {
+    let sum = 0;
+    let numFluidCells = 0;
+
+    for (let i = 0; i < densGrid.length; i++) {
+      for (let j = 0; j < densGrid[i].length; j++) {
+        if (objGrid[i][j] == 1) {
+          sum += densGrid[i][j];
+          numFluidCells++;
+        }
+    
+        if (numFluidCells > 0) particleRestDens = sum / numFluidCells;
+      }
+    }
+  }
+}
+
+/// Simulator helper function and init functions below this point ///
 
 function clearTank() {
   // clear (inside of) grid and replace with undefined (air)
@@ -396,15 +511,41 @@ function clearTank() {
   }
 }
 
-let buffer = 2;
 function initParticles(num_ptc) {
-  // for num particles
+
   for (let i = 0; i < num_ptc; i++) { 
-    let _x = random((_width-rect_w)/2 + buffer*cellSize, (_width+rect_w)/2 -   buffer*cellSize);
-    let _y = random((_height-rect_h)/2 + buffer*cellSize, (_height+rect_h)/2 - buffer*cellSize);
+    let _x = random((_width-rect_w)/2 + lbuffer*cellSize, (_width+rect_w)/2 -   rbuffer*cellSize);
+    let _y = random((_height-rect_h)/2 + ybuffer*cellSize, (_height+rect_h)/2 - ybuffer*cellSize);
     pr[i] = new p5.Vector(_x,_y); // random x,y
     pv[i] = new p5.Vector(0,0);   // no starting velocity
+    pc[3*i] = 0;
+    pc[3*i+1] = 0;
+    pc[3*i+2] = 255;
   }
+
+  /// ### ///
+
+  /*
+  let _x = (_width-rect_w)/2 + r/2
+  // (_width+rect_w)/2 -   buffer*cellSize);
+  
+  let _y = (_height-rect_h)/2;
+  // (_height+rect_h)/2 - buffer*cellSize);
+
+  // dam break
+  for (let i = 0; i < num_ptc; i++) {
+    if (_x >= (_width+rect_w)/2 - rbuffer*cellSize) {
+      _x = (_width-rect_w)/2 + r/2;
+      _y += (1.3*r);
+      if (_y > (_height+rect_h)/2) _y = (_height-rect_h)/2;
+    }
+    // if (_y >= ((_height+rect_h)/2 - buffer*cellSize)) return;
+
+    pr[i] = new p5.Vector(_x+random(-100,100)/100,_y); // random x,y
+    pv[i] = new p5.Vector(0,0);   // no starting velocity
+    _x += (1.3*r);
+  }
+  */
 }
 
 function initVelGrid() {
@@ -412,9 +553,11 @@ function initVelGrid() {
     velGrid[i] = [];
     rGrid[i] = [];
     lastVel[i] = [];
+    densGrid[i] = [];
     for (let j = 0; j < floor(rect_h/cellSize)+2; j++) {
       velGrid[i][j] = new p5.Vector(0,0);
       rGrid[i][j] = new p5.Vector(0,0);
+      densGrid[i][j] = 0;
       lastVel[i][j] = new p5.Vector(0,0);
     }
   }
@@ -425,6 +568,14 @@ function clearRV() {
     for (let j = 0; j < velGrid[i].length; j++) {
       rGrid[i][j] = new p5.Vector(0,0);
       velGrid[i][j] = new p5.Vector(0,0);
+    }
+  }
+}
+
+function clearDens() {
+  for (let i = 0; i < densGrid.length; i++) {
+    for (let j = 0; j < densGrid[i].length; j++) {
+      densGrid[i][j] = 0;
     }
   }
 }
@@ -447,26 +598,31 @@ function drawGrid() {
     }
   }
 
-  for (let i = 0; i < objGrid.length; i++) {
-    for (let j = 0; j < objGrid[i].length; j++) {
-      fill(0,255,0); strokeWeight(0); text(str(i) + "," + str(j), (_width-rect_w)/2 + (i-1)*cellSize + 2.5, (_height-rect_h)/2 + (j-1)*cellSize + 10);
-      fill(255,0,0); text(objGrid[i][j], (_width-rect_w)/2 + (i)*cellSize - 10, (_height-rect_h)/2 + (j-1)*cellSize + 10);
-    }
-  }
+  // for (let i = 0; i < objGrid.length; i++) {
+  //   for (let j = 0; j < objGrid[i].length; j++) {
+  //     fill(0,255,0); strokeWeight(0); text(str(i) + "," + str(j), (_width-rect_w)/2 + (i-1)*cellSize + 2.5, (_height-rect_h)/2 + (j-1)*cellSize + 10);
+  //     fill(255,0,0); text(objGrid[i][j], (_width-rect_w)/2 + (i)*cellSize - 10, (_height-rect_h)/2 + (j-1)*cellSize + 10);
+  //   }
+  // }
 }
 
-let max_vel = 9;
 function drawVel() {
   for (let i = 0; i < velGrid.length; i++) {
     for (let j = 0; j < velGrid[i].length; j++) {
+
       strokeWeight(1);
       let mx = (_width-rect_w)/2 + (i-1)*cellSize + cellSize/2;
-      let my = (_height-rect_h)/2 + (j-1)*cellSize + cellSize/2;
-      // ellipse(mx,my,5,5);
       let msx = constrain(velGrid[i][j].x/max_vel,-1,1);
+
+      let my = (_height-rect_h)/2 + (j-1)*cellSize + cellSize/2;
       let msy = constrain(velGrid[i][j].y/max_vel,-1,1);
-      stroke(0,255,0); line(mx-cellSize/2,my,mx-(1-msx)*(cellSize/2),my);
-      stroke(255,0,0); line(mx,my+cellSize/2,mx,my+(1-msy)*(cellSize/2));
+
+      if (velGrid[i][j].x != 0) {
+        stroke(0,255,0); line(mx-cellSize/2,my,mx-(1-msx)*(cellSize/2),my);
+      }
+      if (velGrid[i][j].y != 0) {
+        stroke(255,0,0); line(mx,my+cellSize/2,mx,my+(1-msy)*(cellSize/2));
+      }
     }
   }
 }
