@@ -26,14 +26,14 @@ let maxX = _width - (_width - rect_w)/2;
 let maxY = _height - (_height - rect_h)/2;
 
 // simulator vars
-let g = 100;
+let g = 1000;
 let flipRatio = .9;
 let cellSize = 10;
 let num_ptc = 1000;
 let r = 0.3 * cellSize;
 let pressureIter = 50;
 
-let substep = 2;
+let substep = 1.5;
 let speed = 1;
 
 // force incompressibility
@@ -51,11 +51,27 @@ let lbuffer = 0;
 let rbuffer = 10;
 let ybuffer = 5;
 
+
+// INTERACTIVE STUFF (handpose/ mouse force)
+
+var mouseStrength = 1000000;  // Strength of the mouse force
+var mouseForceRadius = 50;  // Radius of the mouse force field
+
+let handpose;
+let video;
+let predictions = [];
+
+
+function modelReady() {
+  console.log("Model ready!");
+}
+
 // NOTES: This function initializes the canvas, the tank, and any arrays we need to store data.
   // It also initializes our particles before simulating, so we can change what type of scenario we
   // want to simulate in here by changing / calling initParticles()
 function setup() {
   createCanvas(_width, _height);
+
   fill(255);
   noStroke();
 
@@ -67,6 +83,41 @@ function setup() {
   initParticles(num_ptc);
 }
 
+// A function to draw ellipses over the detected keypoints
+function drawKeypoints() {
+  for (let i = 0; i < predictions.length; i += 1) {
+    const prediction = predictions[i];
+    for (let j = 0; j < prediction.landmarks.length; j += 1) {
+      const keypoint = prediction.landmarks[j];
+      fill(0, 255, 0);
+      noStroke();
+      ellipse(keypoint[0], keypoint[1], 10, 10);
+    }
+  }
+}
+function mouseMapping() {
+  // Check if any predictions exist
+  if (predictions.length > 0) {
+    // Get the first prediction
+    const prediction = predictions[0];
+    // Get the index finger landmark
+    const indexFinger = prediction.landmarks[8];
+    mouseX = indexFinger[0];
+    mouseY = indexFinger[1];
+  }
+}
+
+function setupCamera() {
+  video = createCapture(VIDEO);
+  video.size(width, height);
+  handpose = ml5.handpose(video, modelReady);
+  handpose.on("predict", results => {
+    predictions = results;
+  });
+  video.hide();
+}
+
+let functionCalled = false;
 let dt = 1 / 60;
 function draw() {
   if (frameCount < time_buff) return; 
@@ -74,12 +125,30 @@ function draw() {
   background(228,202,159); // #savebeige
   fill (25); strokeWeight(0); rect(width-75,0,75,50);
   fill(255); text("fr: " + str(floor(frameRate())), _width - 50, 25);      // frame rate text
+  fill(25); text("1 for mouse force", _width - 200, 15);      // frame rate text
+  fill(25); text("2 for handpose", _width - 200, 30);      // frame rate text
   stroke(0); strokeWeight(3); fill(35); rect((_width-rect_w)/2, (_height-rect_h)/2, rect_w, rect_h); // draw tank
   // add rotation by angle theta, will require reworking forces applied in particle step
 
   if (key == 'g') drawGrid();
   if (key == 'v') drawVel();
 
+  // press 2 to toggle handpose
+  // press 1 to toggle mouse force (default)
+  if (key == '2') {
+    if (!functionCalled) {
+      setupCamera();
+      functionCalled = true;
+    }
+  }
+
+  if (key == '1') {
+    if (functionCalled) {
+      video.remove();
+      functionCalled = false;
+    }
+  }
+ 
   /// PHYSICS SIM ///
   // let sdt = dt / substep;
 
@@ -116,8 +185,7 @@ function draw() {
 
   /// END PHYSICS SIM ///
 
-  // if mouse down
-    // push outwards from cell clicked
+  /// DRAWING ///
 
   doColors();
 
@@ -125,7 +193,17 @@ function draw() {
   for (let i = 0; i < num_ptc; i++) {
     fill(pc[3*i],pc[3*i+1],pc[3*i+2]); stroke(255); strokeWeight(0.5); ellipse(pr[i].x, pr[i].y, r, r);
   }
-}
+
+  if (functionCalled == true) {
+    drawKeypoints();
+    mouseMapping();
+  }
+  // draw the mouse force field
+  noFill();  // Don't fill the circle
+  stroke(0, 255, 0);  // Set the stroke color to green
+  strokeWeight(2);  // Set the stroke weight to 2
+  ellipse(mouseX, mouseY, mouseForceRadius*2, mouseForceRadius*2);  // Draw the circle
+  }
 
 function ptcToGrid() {
   // set lastVel
@@ -330,18 +408,74 @@ function ForceIncompressability(dt) {
   }
 }
 
+// function updateParticle(idx, dt) {
+//   pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
+//   pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+
+//   let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+//   let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+
+//   if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
+
+//   // if (objGrid[cell_x][cell_y] == 1) 
+//   ptcGrid[cell_x][cell_y].push(idx);
+// }
+
 function updateParticle(idx, dt) {
+  // Update velocity, v = v + g * dt
   pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-  pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+  pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v           
 
-  let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
-  let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+  // Calculate the distance between the particle and the mouse
+  var dx = pr[idx].x - mouseX;
+  var dy = pr[idx].y - mouseY;
+  var dist = Math.sqrt(dx * dx + dy * dy);
 
-  if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
 
-  // if (objGrid[cell_x][cell_y] == 1) 
-  ptcGrid[cell_x][cell_y].push(idx);
+   if (dist > mouseForceRadius){
+    // Calculate the cell coordinates of the particle
+      pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
+    pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+
+    let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+    let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+
+    if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
+
+    if (objGrid[cell_x][cell_y] == 1) 
+    ptcGrid[cell_x][cell_y].push(idx);
+  }
+    else {  
+      // Avoid division by zero
+      if (dist < 1.0) dist = 1.0;  
+  
+      // Calculate the force exerted by the mouse on the particle
+      var forceX = mouseStrength * dx / (dist * dist * dist);
+      var forceY = mouseStrength * dy / (dist * dist * dist);
+  
+      // Update the particle velocity
+      pv[idx].x += forceX;
+      pv[idx].y += forceY;
+  
+      // Calculate the cell coordinates of the particle
+      var cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+      var cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+  
+      // Set the cell in the objGrid to 1 (wall) if it's within the force field
+      if (isNaN(objGrid[cell_x][cell_y]) || objGrid[cell_x][cell_y] < 1) {
+        objGrid[cell_x][cell_y] = 1;
+      }
+  
+      // Only push the particle into the cell if it's a valid cell
+      if (objGrid[cell_x][cell_y] == 1) {
+        ptcGrid[cell_x][cell_y].push(idx);
+      }
+    }
 }
+
+
+// added green circle
+// update particle
 
 
 function pushPtc(idx) {
