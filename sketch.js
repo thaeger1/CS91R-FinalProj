@@ -26,14 +26,14 @@ let maxX = _width - (_width - rect_w)/2;
 let maxY = _height - (_height - rect_h)/2;
 
 // simulator vars
-let g = 100;
+let g = 9.81;
 let flipRatio = .9;
 let cellSize = 10;
-let num_ptc = 1000;
+let num_ptc = 100;
 let r = 0.3 * cellSize;
-let pressureIter = 50;
+let pressureIter = 10;
 
-let substep = 2;
+let substep = 1;
 let speed = 1;
 
 // force incompressibility
@@ -41,15 +41,18 @@ let o = 1.9;
 
 // push ptc
 let dMin = 2 * r;
-let iter = 3;
+let iter = 2;
 
 // draw vel
-let max_vel = 1;
+let max_vel = 10;
 
 // init ptc
-let lbuffer = 0;
-let rbuffer = 10;
-let ybuffer = 5;
+let lbuffer = 5;
+let rbuffer = 5;
+let bbuffer = 5;
+let tbuffer = 5;
+
+let fr = 60;
 
 // NOTES: This function initializes the canvas, the tank, and any arrays we need to store data.
   // It also initializes our particles before simulating, so we can change what type of scenario we
@@ -59,7 +62,7 @@ function setup() {
   fill(255);
   noStroke();
 
-  frameRate(60);
+  frameRate(fr);
 
   initObjGrid();
   initVelGrid();
@@ -67,7 +70,7 @@ function setup() {
   initParticles(num_ptc);
 }
 
-let dt = 1 / 60;
+let dt = 1 / fr;
 function draw() {
   if (frameCount < time_buff) return; 
 
@@ -83,15 +86,18 @@ function draw() {
   /// PHYSICS SIM ///
   // let sdt = dt / substep;
 
+  clearPtcGrid();
+  clearTank();
+  clearDens();
+
   for (let k = 0; k < substep; k++) {
-    clearPtcGrid();
-    clearTank();
-    clearDens();
 
     // simulate particles //
     for (let i = 0; i < num_ptc; i++) {
-      updateParticle(i, dt/substep);
+      updateParticle(i, dt);
     }
+
+    // updateMyGrids();
 
     for (let i = 0; i < num_ptc; i++) {
       pushPtc(i);
@@ -209,10 +215,14 @@ function gridToPtc() {
       let lx = tx - (cell_x-1)*(cellSize);
       let ly = ty - (cell_y-1)*(cellSize);
 
+      // console.log(lx,ly);
+
       let w1 = (1-(lx/cellSize)) * (ly/cellSize);
       let w2 = (lx/cellSize)     * (ly/cellSize);
       let w3 = (lx/cellSize)     * (1-(ly/cellSize));
       let w4 = (1-(lx/cellSize)) * (1-(ly/cellSize));
+
+      // console.log(w1,w2,w3,w4);
 
       // write velocity from corners to particle
       let sumqPIC = 0;
@@ -245,6 +255,7 @@ function gridToPtc() {
         let qpFLIP = sumqFLIP / sumw;
 
         pv[i].x = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
+
         // if (i == 0) console.log(pv[i].x);
 
         // pv[i].x = qpPIC;
@@ -273,6 +284,8 @@ function gridToPtc() {
 
         let qpPIC = sumqPIC / sumw;
         let qpFLIP = sumqFLIP / sumw;
+
+
         // let qpFLIP = pv[i].y + sumqFLIP / sumw;
 
         pv[i].y = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
@@ -284,11 +297,11 @@ function gridToPtc() {
 function ForceIncompressability(dt) {
 
   // update lastVel
-  for (let i = 0; i < velGrid.length; i++) {
-    for (let j = 0; j < velGrid[i].length; j++) {
-      lastVel[i][j] = velGrid[i][j];
-    }
-  }
+  // for (let i = 0; i < velGrid.length; i++) {
+  //   for (let j = 0; j < velGrid[i].length; j++) {
+  //     lastVel[i][j] = velGrid[i][j];
+  //   }
+  // }
 
   for (let i = 0; i < pressureIter; i++) {
     for (let x = 1; x < velGrid.length-1; x++) {
@@ -331,22 +344,29 @@ function ForceIncompressability(dt) {
 }
 
 function updateParticle(idx, dt) {
-  pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-  pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+  // if (idx == 0) console.log(pv[idx],new p5.Vector(0,g*dt));
 
-  let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
-  let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+  // console.log(pr[idx]);
 
-  if (objGrid[cell_x][cell_y] == undefined) objGrid[cell_x][cell_y] = 1;
+  let dvy = g * dt;
+  pv[idx].add(0,dvy);
 
-  // if (objGrid[cell_x][cell_y] == 1) 
-  ptcGrid[cell_x][cell_y].push(idx);
+  let drx = pv[idx].x * dt;
+  let dry = pv[idx].y * dt;
+
+  pr[idx].add(drx, dry);
+
+  let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+  let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+
+  if (objGrid[cx][cy] == undefined) objGrid[cx][cy] = 1;
+  ptcGrid[cx][cy].push(idx);
 }
 
 
 function pushPtc(idx) {
-  for (let i = 0; i < iter; i++) {
 
+  for (let i = 0; i < iter; i++) {
     let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
     let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
 
@@ -364,7 +384,6 @@ function pushPtc(idx) {
         for (let j = 0; j < ptcGrid[x][y].length; j++) {
           let oidx = ptcGrid[x][y][j];
           if (oidx == idx) continue;
-          
     
           let dx = pr[oidx].x - pr[idx].x;
           let dy = pr[oidx].y - pr[idx].y;
@@ -398,8 +417,6 @@ function pushPtc(idx) {
 
 
 function doColors() {
-  let h1 = 1 / cellSize;
-
   for (let i = 0; i < num_ptc; i++) {
     let ds = 1;
 
@@ -413,9 +430,9 @@ function doColors() {
     if (particleRestDens > 0) {
       let relDens = densGrid[xi][yi] / particleRestDens;
       // if (i == 0) console.log(particleRestDens, relDens, densGrid[xi][yi]);
-      if (relDens < 0.5) {
-        pc[3*i]   = 200;
-        pc[3*i+1] = 200;
+      if (relDens < 0.7) {
+        pc[3*i]   = 210;
+        pc[3*i+1] = 210;
         pc[3*i+2] = 255;
       }
     }
@@ -474,7 +491,7 @@ function updateDensity() {
     // if (i == 0) console.log(y,y0,ty,y1);
 
     let sx = 1 - tx;
-    let sy = 1 - ty;
+    let sy = ty; // flipped
 
     if (x0 < _width/cellSize & y0 < _height/cellSize) densGrid[x0][y0] += sx * sy;
     if (x1 < _width/cellSize & y1 < _height/cellSize) densGrid[x1][y0] += tx * sy;
@@ -515,7 +532,7 @@ function initParticles(num_ptc) {
 
   for (let i = 0; i < num_ptc; i++) { 
     let _x = random((_width-rect_w)/2 + lbuffer*cellSize, (_width+rect_w)/2 -   rbuffer*cellSize);
-    let _y = random((_height-rect_h)/2 + ybuffer*cellSize, (_height+rect_h)/2 - ybuffer*cellSize);
+    let _y = random((_height-rect_h)/2 + tbuffer*cellSize, (_height+rect_h)/2 - bbuffer*cellSize);
     pr[i] = new p5.Vector(_x,_y); // random x,y
     pv[i] = new p5.Vector(0,0);   // no starting velocity
     pc[3*i] = 0;
@@ -651,10 +668,26 @@ function initPtcGrid() {
 }
 
 function clearPtcGrid() {
-  for (let i = 0; i < objGrid.length; i++) {
-    // ptcGrid[i] = [];
-    for (let j = 0; j < objGrid[i].length; j++) {
+  // console.log(ptcGrid);
+  for (let i = 0; i < ptcGrid.length; i++) {
+    for (let j = 0; j < ptcGrid[i].length; j++) {
       ptcGrid[i][j].length = 0;
     }
+  }
+}
+
+function updateMyGrids() {
+  for (let i = 0; i < num_ptc; i++) {
+    let cx = constrain(floor((pr[i].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
+    let cy = constrain(floor((pr[i].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
+  
+    // console.log((floor((pr[i].x - (_width - rect_w)/2) / cellSize)+1));
+    // console.log((floor((pr[i].y - (_height - rect_h)/2) / cellSize)+1));
+    // console.log(pr[i].x);
+    // console.log(pr[i].y);
+    // console.log(cx,cy);
+
+    if (objGrid[cx][cy] == undefined) objGrid[cx][cy] = 1;
+    ptcGrid[cx][cy].push(i);
   }
 }
