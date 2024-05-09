@@ -42,5 +42,5 @@ Representing everything in a velocity grid also meant we can distinguish between
 
 (flip water pic here)
 
-
+<br />
 The way we implemented this was by drawing small fluid particles within a box containing the fluid, and making these into shapes within draw() was what our main visuals were. In the backend, the box was divided into a grid to use for our velocity calculations, which we treated as 2D arrays. We also needed to ensure this grid had boundaries representing the ends of the box, where our fluid would know it was touching a solid object, so we made flags representing 0 = wall and 1 = fluid.
