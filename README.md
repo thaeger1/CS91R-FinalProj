@@ -42,6 +42,7 @@ In terms of design, we already had a good idea of what our FLIP (Fluid-Implicit 
 (flip water pic here)
 
 <br />
+
 ### Implementation
 Our project is a recreation of a FLIP water simulator - a type of fluid sim that represents the fluid as particles, and to calculate fluid-like motion, every frame run through 4 steps: We map the particle velocities onto a grid, run the velocity calculations via a projection step, copy the new velocities back onto the particles, and then simulate the result (update density + check for collisions). 
 Within this projection step is where most of the movement logic takes place: After converting dividing particle velocity into cells on a grid, we then calculate the cells' velocities to be incompressible (which is a property of fluid dynamics that measures volume change as a response to a pressure).
@@ -50,5 +51,6 @@ We began our process of implementation by first making a top-down-design, where 
 
 
 <br />
+
 ### Evaluation
 We can base our evaluation based on the working FLIP simulators that exist (most of which don't use p5.js), and how well ours compares to theirs. In terms of the general physics, while we obey general newtonian physics and have some fluid-like properties (some swirling/ waves) it isn't a perfect fluid sim. In implementing the 4-step FLIP logic, we ran into  p5.js specific problems/ malfunctionings (the inverted y axis, weird compiler issues) toward the end, and most of our time was spent searching for these bugs and making smaller adjustments. Other than that, our framerate seems to be operating as well as p5 can handle. Additionally, we implemented mouse interration where moving the cursor can splash water around, and we also included ml5's handpose library so when handpose mode is selected, a hand can instead serve as the mouse to then move the water around.
