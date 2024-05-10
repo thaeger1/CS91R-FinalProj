@@ -48,6 +48,8 @@ In this example FLIP simulator, the black box represents the tank storing the wa
 ![Waves caused by using the object to splash water around](images/waves.png)
 
 <br />
+<br />
+
 
 After using the ball to splash the water around the tank, we observe large waves as the fluid crashes against itself and the walls. Due to the increased velocity, we see more white particles.
 
