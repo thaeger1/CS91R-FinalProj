@@ -63,6 +63,17 @@ Within this projection step is where most of the movement logic takes place: Aft
 
 We began our process of implementation by first making a top-down-design, where within draw() we represented the 4 main steps of our simulation as functions that were constructed later on. In the coding process, we first ensured that our particles were visible and obeying normal gravity, to which we then started implementing the steps one by one.
 
+<br />
+
+![our fluid sim, normal water behavior](images/p5js_sim.gif)
+
+Our fluid simulator (this is the fluid's normal behavior of assuming the shape of its container.)
+
+<br />
+
+![our fluid sim, interaction behavior](images/p5js_waves.gif)
+
+Our interraction features. Here, the mouse controls a circle acting as a solid. In handpose mode, ml5.handpose will detect your index finger to be the mouse!
 
 <br />
 
