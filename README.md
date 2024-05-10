@@ -44,7 +44,6 @@ In terms of design, we already had a good idea of what our FLIP (Fluid-Implicit 
 ![The water behaving on its own](images/calm.png)
 
 <br />
-
 In this example FLIP simulator, the black box represents the tank storing the water, and the red ball is the object used to splash the water around. Without the ball's interration, the water's natural behavior is to generate small waves at the surface. The blue particles indicate higher density/lower velocity, and white indicates lower density/higher velocity.
 
 <br />
