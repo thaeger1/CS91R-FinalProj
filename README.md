@@ -39,8 +39,8 @@ For our project, we chose to recreate a fluid simulator entirely within p5.js. I
 ### Design
 In terms of design, we already had a good idea of what our FLIP (Fluid-Implicit Particles) water simulator would look like, based on existing ones. Specifically in this fluid sim, we drew small fluid particles (ellipses) within a box containing the fluid, and these particles would be animated within draw().  In our backend, the box was divided into a grid to use for our velocity calculations, which we treated as 2D arrays. This meant we had to ensure the grid had boundaries representing the ends of the box, where our fluid would know it was touching a solid object, so we made flags representing 0 = wall and 1 = fluid. Ultimately, this was all the design needed to demonstrate the complex logic happening behind the scenes, but in terms of further interraction, an idea we included was allowing the mouse to splash the water around by giving it a "forcefield", treating the area around the mouse as a wall essentially.
 
-![The water behaving on its own](calm.png)
-![Waves caused by using the object to splash water around](waves.png)
+![The water behaving on its own](images/calm.png)
+![Waves caused by using the object to splash water around](images/waves.png)
 
 <br />
 
