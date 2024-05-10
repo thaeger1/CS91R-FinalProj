@@ -1,5 +1,5 @@
-let _width = 800;
-let _height = 600;
+let _width = 1000;
+let _height = 800;
 
 let pv = [];        // list of vectors that represent our particles
 let pr = [];        // r is position, v is velocity
@@ -16,8 +16,8 @@ let densGrid = [];
 let time_buff = 10; // increase for more "startup" time
 
 // water tank dimensions
-let rect_w = 400;
-let rect_h = 200;
+let rect_w = 500;
+let rect_h = 300;
 
 // handleCollisions
 let minX = (_width - rect_w)/2;
@@ -26,25 +26,25 @@ let maxX = _width - (_width - rect_w)/2;
 let maxY = _height - (_height - rect_h)/2;
 
 // simulator vars
-let g = 1000;
-let flipRatio = .9;
+let g = 19;
+let flipRatio = 0.9;
 let cellSize = 10;
-let num_ptc = 1000;
+let num_ptc = 1500;
 let r = 0.3 * cellSize;
 let pressureIter = 50;
 
-let substep = 1.5;
-let speed = 1;
+let substep = 2;
+// let speed = 1;
 
 // force incompressibility
 let o = 1.9;
 
 // push ptc
 let dMin = 2 * r;
-let iter = 3;
+let iter = 2;
 
 // draw vel
-let max_vel = 1;
+let max_vel = 10;
 
 // init ptc
 let lbuffer = 0;
@@ -54,8 +54,8 @@ let ybuffer = 5;
 
 // INTERACTIVE STUFF (handpose/ mouse force)
 
-var mouseStrength = 1000000;  // Strength of the mouse force
-var mouseForceRadius = 50;  // Radius of the mouse force field
+var mouseStrength = 100000;  // Strength of the mouse force
+var mouseForceRadius = 15;  // Radius of the mouse force field
 
 let handpose;
 let video;
@@ -71,6 +71,8 @@ function modelReady() {
   // want to simulate in here by changing / calling initParticles()
 function setup() {
   createCanvas(_width, _height);
+
+  // console.log(minY,maxY);
 
   fill(255);
   noStroke();
@@ -170,17 +172,18 @@ function draw() {
       handleCollisions(i);
     }
 
-    // particles -> grid : velocities //
+    
+    // // particles -> grid : velocities //
     ptcToGrid();
 
-    // update density //
+    // // update density //
     updateDensity();
 
-    // make velocities incompressible //
+    // // make velocities incompressible //
     ForceIncompressability();
 
-    // grid -> particles : velocities //
-    gridToPtc();
+    // // grid -> particles : velocities //
+    gridToPtc2();
   }
 
   /// END PHYSICS SIM ///
@@ -203,7 +206,7 @@ function draw() {
   stroke(0, 255, 0);  // Set the stroke color to green
   strokeWeight(2);  // Set the stroke weight to 2
   ellipse(mouseX, mouseY, mouseForceRadius*2, mouseForceRadius*2);  // Draw the circle
-  }
+}
 
 function ptcToGrid() {
   // set lastVel
@@ -247,10 +250,10 @@ function ptcToGrid() {
         rGrid[cell_x+1][cell_y-1].x   += w3;
         rGrid[cell_x][cell_y-1].x     += w4;
       } else if (axis == 1) { // v, .y component
-        velGrid[cell_x][cell_y].y     -= (objGrid[cell_x][cell_y] == 0)     ? 0 : w1 * qp; // q1
-        velGrid[cell_x+1][cell_y].y   -= (objGrid[cell_x+1][cell_y] == 0)   ? 0 : w2 * qp; // q2
-        velGrid[cell_x+1][cell_y-1].y -= (objGrid[cell_x+1][cell_y-1] == 0) ? 0 : w3 * qp; // q3
-        velGrid[cell_x][cell_y-1].y   -= (objGrid[cell_x][cell_y-1] == 0)   ? 0 : w4 * qp; // q4
+        velGrid[cell_x][cell_y].y     += (objGrid[cell_x][cell_y] == 0)     ? 0 : w1 * qp; // q1
+        velGrid[cell_x+1][cell_y].y   += (objGrid[cell_x+1][cell_y] == 0)   ? 0 : w2 * qp; // q2
+        velGrid[cell_x+1][cell_y-1].y += (objGrid[cell_x+1][cell_y-1] == 0) ? 0 : w3 * qp; // q3
+        velGrid[cell_x][cell_y-1].y   += (objGrid[cell_x][cell_y-1] == 0)   ? 0 : w4 * qp; // q4
 
         rGrid[cell_x][cell_y].y       += w1;
         rGrid[cell_x+1][cell_y].y     += w2;
@@ -271,18 +274,16 @@ function ptcToGrid() {
   }
 }
 
-function gridToPtc() {
+function gridToPtc2() {
   for (let i = 0; i < num_ptc; i++) {
     for (let axis = 0; axis <= 1; axis++) {
-
       let tx = (pr[i].x - (_width - rect_w)/2);
       let ty = (pr[i].y - (_height - rect_h)/2);
-      tx -= (axis) ? (cellSize/2) : 0;
-      ty += (axis) ? 0 : (cellSize/2);
-
+      tx -= (axis)  ? (cellSize/2) : 0;
+      ty += (axis) ?  0 : (cellSize/2);
       let cell_x = floor(tx/cellSize)+1;
       let cell_y = floor(ty/cellSize)+1;
-    
+
       // find lx, ly, local x,y coords within the cell
       let lx = tx - (cell_x-1)*(cellSize);
       let ly = ty - (cell_y-1)*(cellSize);
@@ -292,72 +293,138 @@ function gridToPtc() {
       let w3 = (lx/cellSize)     * (1-(ly/cellSize));
       let w4 = (1-(lx/cellSize)) * (1-(ly/cellSize));
 
-      // write velocity from corners to particle
-      let sumqPIC = 0;
-      let sumqFLIP = 0;
-      let sumw = 0;
-      if (axis == 0) {
-        if (objGrid[cell_x][cell_y] != undefined) {
-          sumqPIC += velGrid[cell_x][cell_y].x * w1; // q1
-          sumqFLIP += (velGrid[cell_x][cell_y].x - lastVel[cell_x][cell_y].x) * w1;
-          sumw += w1;
-        }
-        if (objGrid[cell_x+1][cell_y] != undefined) {
-          sumqPIC += velGrid[cell_x+1][cell_y].x * w2; // q2
-          sumqFLIP += (velGrid[cell_x+1][cell_y].x - lastVel[cell_x+1][cell_y].x) * w2;
-          sumw += w2;
-        }
-        if (objGrid[cell_x+1][cell_y-1] != undefined) {
-          sumqPIC += velGrid[cell_x+1][cell_y-1].x * w3; // q3
-          sumqFLIP += (velGrid[cell_x+1][cell_y-1].x - lastVel[cell_x+1][cell_y-1].x) * w3;
-          sumw += w3;
-        }
-        if (objGrid[cell_x][cell_y-1] != undefined) {
-          sumqPIC += velGrid[cell_x][cell_y-1].x * w4; // q4
-          sumqFLIP += (velGrid[cell_x][cell_y-1].x - lastVel[cell_x][cell_y-1].x) * w4;
-          sumw += w4;
-        }
+      // console.log(w1+w2+w3+w4);
 
-        let qpPIC = sumqPIC / sumw;
-        // let qpFLIP = pv[i].x + sumqFLIP / sumw;
-        let qpFLIP = sumqFLIP / sumw;
+      if (axis == 0) { // u, .x component
+        let v1 = (objGrid[cell_x][cell_y]     != undefined || objGrid[cell_x][cell_y-1]   != undefined) ? 1 : 0;
+        let v2 = (objGrid[cell_x+1][cell_y]   != undefined || objGrid[cell_x+1][cell_y-1] != undefined) ? 1 : 0;
+        let v3 = (objGrid[cell_x+1][cell_y-1] != undefined || objGrid[cell_x+1][cell_y-2] != undefined) ? 1 : 0;
+        let v4 = (objGrid[cell_x][cell_y-1]   != undefined || objGrid[cell_x][cell_y-2]   != undefined) ? 1 : 0;
+  
+        var denom = v1 * w1 + v2 * w2 + v3 * w3 + v4 * w4;
+        if (denom <= 0) continue;
 
-        pv[i].x = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
-        // if (i == 0) console.log(pv[i].x);
+        let mv = pv[i].x;
+        let picV = (v1 * w1 * velGrid[cell_x][cell_y].x + v2 * w2 * velGrid[cell_x+1][cell_y].x + v3 * w3 * velGrid[cell_x+1][cell_y-1].x + v4 * w4 * velGrid[cell_x][cell_y-1].x) / denom;
 
-        // pv[i].x = qpPIC;
+        let cor = (v1 * w1 * (velGrid[cell_x][cell_y].x     - lastVel[cell_x][cell_y].x)
+                 + v2 * w2 * (velGrid[cell_x+1][cell_y].x   - lastVel[cell_x+1][cell_y].x)
+                 + v3 * w3 * (velGrid[cell_x+1][cell_y-1].x - lastVel[cell_x+1][cell_y-1].x)
+                 + v4 * w4 * (velGrid[cell_x][cell_y-1].x   - lastVel[cell_x][cell_y-1].x) ) / denom;
+        let flip = mv + cor;
 
-      } else if (axis == 1) {
-        if (objGrid[cell_x][cell_y] != undefined) {
-          sumqPIC += velGrid[cell_x][cell_y].y * w1; // q1
-          sumqFLIP += (velGrid[cell_x][cell_y].y - lastVel[cell_x][cell_y].y) * w1;
-          sumw += w1;
-        }
-        if (objGrid[cell_x+1][cell_y] != undefined) {
-          sumqPIC += velGrid[cell_x+1][cell_y].y * w2; // q2
-          sumqFLIP += (velGrid[cell_x+1][cell_y].y - lastVel[cell_x+1][cell_y].y) * w2;
-          sumw += w2;
-        }
-        if (objGrid[cell_x+1][cell_y-1] != undefined) {
-          sumqPIC += velGrid[cell_x+1][cell_y-1].y * w3; // q3
-          sumqFLIP += (velGrid[cell_x+1][cell_y-1].y - lastVel[cell_x+1][cell_y-1].y) * w3;
-          sumw += w3;
-        }
-        if (objGrid[cell_x][cell_y-1] != undefined) {
-          sumqPIC += velGrid[cell_x][cell_y-1].y * w4; // q4
-          sumqFLIP += (velGrid[cell_x][cell_y-1].y - lastVel[cell_x][cell_y-1].y) * w4;
-          sumw += w4;
-        }
+        pv[i].x = ((1 - flipRatio) * picV) + (flipRatio * flip);
+      } else if (axis == 1) { // v, .y component
+        let v1 = (objGrid[cell_x][cell_y]     != undefined || objGrid[cell_x-1][cell_y]   != undefined) ? 1 : 0;
+        let v2 = (objGrid[cell_x+1][cell_y]   != undefined || objGrid[cell_x][cell_y]     != undefined) ? 1 : 0;
+        let v3 = (objGrid[cell_x+1][cell_y-1] != undefined || objGrid[cell_x][cell_y-1]   != undefined) ? 1 : 0;
+        let v4 = (objGrid[cell_x][cell_y-1]   != undefined || objGrid[cell_x-1][cell_y-1] != undefined) ? 1 : 0;
+  
+        var denom = v1 * w1 + v2 * w2 + v3 * w3 + v4 * w4;
+        if (denom <= 0) continue;
+        
+        let mv = pv[i].y;
+        let picV = (v1 * w1 * velGrid[cell_x][cell_y].y + v2 * w2 * velGrid[cell_x+1][cell_y].y + v3 * w3 * velGrid[cell_x+1][cell_y-1].y + v4 * w4 * velGrid[cell_x][cell_y-1].y) / denom;
 
-        let qpPIC = sumqPIC / sumw;
-        let qpFLIP = sumqFLIP / sumw;
-        // let qpFLIP = pv[i].y + sumqFLIP / sumw;
+        let cor = (v1 * w1 * (velGrid[cell_x][cell_y].y     - lastVel[cell_x][cell_y].y)
+                 + v2 * w2 * (velGrid[cell_x+1][cell_y].y   - lastVel[cell_x+1][cell_y].y)
+                 + v3 * w3 * (velGrid[cell_x+1][cell_y-1].y - lastVel[cell_x+1][cell_y-1].y)
+                 + v4 * w4 * (velGrid[cell_x][cell_y-1].y   - lastVel[cell_x][cell_y-1].y) ) / denom;
+        let flip = mv + cor;
 
-        pv[i].y = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
+        pv[i].y = ((1 - flipRatio) * picV) + (flipRatio * flip);
       }
     }
   }
 }
+
+// function gridToPtc() {
+//   for (let i = 0; i < num_ptc; i++) {
+//     for (let axis = 0; axis <= 1; axis++) {
+
+//       let tx = (pr[i].x - (_width - rect_w)/2);
+//       let ty = (pr[i].y - (_height - rect_h)/2);
+//       tx -= (axis) ? (cellSize/2) : 0;
+//       ty += (axis) ? 0 : (cellSize/2);
+
+//       let cell_x = floor(tx/cellSize)+1;
+//       let cell_y = floor(ty/cellSize)+1;
+    
+//       // find lx, ly, local x,y coords within the cell
+//       let lx = tx - (cell_x-1)*(cellSize);
+//       let ly = ty - (cell_y-1)*(cellSize);
+
+//       let w1 = (1-(lx/cellSize)) * (ly/cellSize);
+//       let w2 = (lx/cellSize)     * (ly/cellSize);
+//       let w3 = (lx/cellSize)     * (1-(ly/cellSize));
+//       let w4 = (1-(lx/cellSize)) * (1-(ly/cellSize));
+
+//       // write velocity from corners to particle
+//       let sumqPIC = 0;
+//       let sumqFLIP = 0;
+//       let sumw = 0;
+//       if (axis == 0) {
+//         if (objGrid[cell_x][cell_y] != undefined) {
+//           sumqPIC += velGrid[cell_x][cell_y].x * w1; // q1
+//           sumqFLIP += (velGrid[cell_x][cell_y].x - lastVel[cell_x][cell_y].x) * w1;
+//           sumw += w1;
+//         }
+//         if (objGrid[cell_x+1][cell_y] != undefined) {
+//           sumqPIC += velGrid[cell_x+1][cell_y].x * w2; // q2
+//           sumqFLIP += (velGrid[cell_x+1][cell_y].x - lastVel[cell_x+1][cell_y].x) * w2;
+//           sumw += w2;
+//         }
+//         if (objGrid[cell_x+1][cell_y-1] != undefined) {
+//           sumqPIC += velGrid[cell_x+1][cell_y-1].x * w3; // q3
+//           sumqFLIP += (velGrid[cell_x+1][cell_y-1].x - lastVel[cell_x+1][cell_y-1].x) * w3;
+//           sumw += w3;
+//         }
+//         if (objGrid[cell_x][cell_y-1] != undefined) {
+//           sumqPIC += velGrid[cell_x][cell_y-1].x * w4; // q4
+//           sumqFLIP += (velGrid[cell_x][cell_y-1].x - lastVel[cell_x][cell_y-1].x) * w4;
+//           sumw += w4;
+//         }
+
+//         let qpPIC = sumqPIC / sumw;
+//         // let qpFLIP = pv[i].x + sumqFLIP / sumw;
+//         let qpFLIP = sumqFLIP / sumw;
+
+//         pv[i].x = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
+//         // if (i == 0) console.log(pv[i].x);
+
+//         // pv[i].x = qpPIC;
+
+//       } else if (axis == 1) {
+//         if (objGrid[cell_x][cell_y] != undefined) {
+//           sumqPIC += velGrid[cell_x][cell_y].y * w1; // q1
+//           sumqFLIP += (velGrid[cell_x][cell_y].y - lastVel[cell_x][cell_y].y) * w1;
+//           sumw += w1;
+//         }
+//         if (objGrid[cell_x+1][cell_y] != undefined) {
+//           sumqPIC += velGrid[cell_x+1][cell_y].y * w2; // q2
+//           sumqFLIP += (velGrid[cell_x+1][cell_y].y - lastVel[cell_x+1][cell_y].y) * w2;
+//           sumw += w2;
+//         }
+//         if (objGrid[cell_x+1][cell_y-1] != undefined) {
+//           sumqPIC += velGrid[cell_x+1][cell_y-1].y * w3; // q3
+//           sumqFLIP += (velGrid[cell_x+1][cell_y-1].y - lastVel[cell_x+1][cell_y-1].y) * w3;
+//           sumw += w3;
+//         }
+//         if (objGrid[cell_x][cell_y-1] != undefined) {
+//           sumqPIC += velGrid[cell_x][cell_y-1].y * w4; // q4
+//           sumqFLIP += (velGrid[cell_x][cell_y-1].y - lastVel[cell_x][cell_y-1].y) * w4;
+//           sumw += w4;
+//         }
+
+//         let qpPIC = sumqPIC / sumw;
+//         let qpFLIP = sumqFLIP / sumw;
+//         // let qpFLIP = pv[i].y + sumqFLIP / sumw;
+
+//         pv[i].y = (1 - flipRatio) * qpPIC + flipRatio * qpFLIP;
+//       }
+//     }
+//   }
+// }
 
 function ForceIncompressability(dt) {
 
@@ -379,7 +446,8 @@ function ForceIncompressability(dt) {
         let vt = velGrid[x][y-1].y;
 
         // find divergence d = u_i+1,j - u_ij + v_i,j+1 - v_ij
-        let _d = ur - ul + vt - vb;
+        // let _d = ur - ul + vt - vb;
+        let _d = ul - ur + vt - vb;
 
         // assuming 0 = wall and 1 = liquid (air and water), _s = s_i+1,j + s_i-1,j + s_i,j+1 + s_i,j-1
         let _s1 = (objGrid[x+1][y] != 0) ? 1 : 0;
@@ -390,8 +458,8 @@ function ForceIncompressability(dt) {
         if (_s == 0) continue;
 
         if (particleRestDens > 0) {
-          var k = 1;
-          var comp = densGrid[x][y] - particleRestDens;
+          let k = 1;
+          let comp = densGrid[x][y] - particleRestDens;
           if (comp > 0) _d = _d - k * comp;
         }
 
@@ -399,18 +467,33 @@ function ForceIncompressability(dt) {
         p *= o;
 
         // write back to velGrid
-        velGrid[x][y].x   -= _s2 * p; //ul
+        velGrid[x][y].x   += _s2 * p; //ul
+        velGrid[x+1][y].x -= _s1 * p; //ur
+
         velGrid[x][y].y   -= _s3 * p; //vb
-        velGrid[x+1][y].x += _s1 * p; //ur
         velGrid[x][y-1].y += _s4 * p; //vt
       }
     }
   }
 }
 
-// function updateParticle(idx, dt) {
-//   pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-//   pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+// function updateParticle2(idx, dt) {
+//   let tx = pv[idx].x;
+//   let ty = pv[idx].y;
+
+//   // console.log(tx,ty);
+
+//   // console.log(ty, ty + g*dt);
+
+//   let newVel = g*dt;
+//   pv[idx].set(tx,ty+newVel);
+
+//   // console.log(pv[idx]);
+
+//   // pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
+//   // pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
+
+//   pr[idx].set(pr[idx].x + dt*pv[idx].x, pr[idx].y + dt*pv[idx].y);
 
 //   let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
 //   let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
@@ -422,9 +505,12 @@ function ForceIncompressability(dt) {
 // }
 
 function updateParticle(idx, dt) {
-  // Update velocity, v = v + g * dt
-  pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-  pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v           
+  let tx = pv[idx].x;
+  let ty = pv[idx].y;
+
+  let newVel = g*dt;
+  pv[idx].set(tx,ty+newVel);
+  pr[idx].set(pr[idx].x + dt*pv[idx].x, pr[idx].y + dt*pv[idx].y);
 
   // Calculate the distance between the particle and the mouse
   var dx = pr[idx].x - mouseX;
@@ -433,10 +519,6 @@ function updateParticle(idx, dt) {
 
 
    if (dist > mouseForceRadius){
-    // Calculate the cell coordinates of the particle
-      pv[idx] = p5.Vector.add(pv[idx],new p5.Vector(0,g).mult(dt)); // update velocity, v = v + g * dt
-    pr[idx] = p5.Vector.add(pr[idx],pv[idx].mult(dt));            // update position, r = r + dt * v
-
     let cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
     let cell_y = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
 
@@ -454,8 +536,8 @@ function updateParticle(idx, dt) {
       var forceY = mouseStrength * dy / (dist * dist * dist);
   
       // Update the particle velocity
-      pv[idx].x += forceX;
-      pv[idx].y += forceY;
+      pv[idx].x += forceX/10;
+      pv[idx].y += forceY/10;
   
       // Calculate the cell coordinates of the particle
       var cell_x = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
@@ -473,7 +555,6 @@ function updateParticle(idx, dt) {
     }
 }
 
-
 // added green circle
 // update particle
 
@@ -483,9 +564,6 @@ function pushPtc(idx) {
 
     let cx = constrain(floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1, 1, rect_w/cellSize);
     let cy = constrain(floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1, 1, rect_h/cellSize);
-
-    // let cx = floor((pr[idx].x - (_width - rect_w)/2) / cellSize)+1;
-    // let cy = floor((pr[idx].y - (_height - rect_h)/2) / cellSize)+1;
   
     let x0 = max(cx-1,0);
     let x1 = min(cx+1,rect_w/cellSize+1);
@@ -547,12 +625,18 @@ function doColors() {
     if (particleRestDens > 0) {
       let relDens = densGrid[xi][yi] / particleRestDens;
       // if (i == 0) console.log(particleRestDens, relDens, densGrid[xi][yi]);
-      if (relDens < 0.5) {
+      if (relDens < 0.1) {
         pc[3*i]   = 200;
         pc[3*i+1] = 200;
         pc[3*i+2] = 255;
       }
     }
+
+    // if (i == 0) {
+    //   pc[3*i]   = 255;
+    //   pc[3*i+1] = 0;
+    //   pc[3*i+2] = 0;
+    // }
   }
 }
 
@@ -562,24 +646,28 @@ function handleCollisions(idx) {
     // console.log("x too small");
     pr[idx].x = minX + r/2;
     pv[idx].x *= -1;
+
     // pv[idx].x = 0;
   }
   if (pr[idx].x > maxX-r/2) {
     // console.log("x too big");
     pr[idx].x = maxX - r/2;
     pv[idx].x *= -1;
+
     // pv[idx].x = 0;
   }
   if (pr[idx].y < minY+r/2) {
     // console.log("y too small");
     pr[idx].y = minY + r/2;
     pv[idx].y *= -1;
+
     // pv[idx].y = 0;
   }
   if (pr[idx].y > maxY-r/2) {
     // console.log("y too big");
     pr[idx].y = maxY - r/2;
     pv[idx].y *= -1;
+
     // pv[idx].y = 0;
   }
 }
@@ -592,9 +680,30 @@ function updateDensity() {
 
   // for each ptc
   for (let i = 0; i < num_ptc; i++) {
+    let tx = (pr[i].x - (_width - rect_w)/2);
+    let ty = (pr[i].y - (_height - rect_h)/2);
+    tx -= (cellSize/2);
+    ty += (cellSize/2);
+    let cell_x = floor(tx/cellSize)+1;
+    let cell_y = floor(ty/cellSize)+1;
+
+    // find lx, ly, local x,y coords within the cell
+    let lx = tx - (cell_x-1)*(cellSize);
+    let ly = ty - (cell_y-1)*(cellSize);
+
+    // console.log(lx,ly);
+
+    let w1 = (1-(lx/cellSize)) * (ly/cellSize);
+    let w2 = (lx/cellSize)     * (ly/cellSize);
+    let w3 = (lx/cellSize)     * (1-(ly/cellSize));
+    let w4 = (1-(lx/cellSize)) * (1-(ly/cellSize));
+
+    // original
+    /*
     // get x, y & clamp to cells
     let x = constrain(pr[i].x-(_width-rect_w)/2,0,rect_w);
     let y = constrain(pr[i].y-(_height-rect_h)/2,0,rect_h);
+    // console.log(x,y);
 
     let x0 = floor((x-h2) * h1);
     let tx = ((x - h2) - x0 * h) * h1;
@@ -605,7 +714,7 @@ function updateDensity() {
     let y0 = floor((y-h2)*h1);
     let ty = ((y - h2) - y0*h) * h1;
     let y1 = min (y0 + 1, densGrid[x0].length-2);
-    // if (i == 0) console.log(y,y0,ty,y1);
+    if (i == 0) console.log(y,y0,ty,y1);
 
     let sx = 1 - tx;
     let sy = 1 - ty;
@@ -614,6 +723,12 @@ function updateDensity() {
     if (x1 < _width/cellSize & y1 < _height/cellSize) densGrid[x1][y0] += tx * sy;
     if (x1 < _width/cellSize & y1 < _height/cellSize) densGrid[x1][y1] += tx * ty;
     if (x0 < _width/cellSize & y0 < _height/cellSize) densGrid[x0][y1] += sx * ty;
+    */
+
+    if (cell_x < _width/cellSize & cell_y < _height/cellSize)     densGrid[cell_x][cell_y]     += w1;
+    if (cell_x+1 < _width/cellSize & cell_y-1 < _height/cellSize) densGrid[cell_x+1][cell_y]   += w2;
+    if (cell_x+1 < _width/cellSize & cell_y-1 < _height/cellSize) densGrid[cell_x+1][cell_y-1] += w3;
+    if (cell_x < _width/cellSize & cell_y < _height/cellSize)     densGrid[cell_x][cell_y-1]   += w4;
     // if (i == 0) console.log(densGrid[x0][y0]);
   }
 
@@ -647,39 +762,28 @@ function clearTank() {
 
 function initParticles(num_ptc) {
 
-  for (let i = 0; i < num_ptc; i++) { 
-    let _x = random((_width-rect_w)/2 + lbuffer*cellSize, (_width+rect_w)/2 -   rbuffer*cellSize);
-    let _y = random((_height-rect_h)/2 + ybuffer*cellSize, (_height+rect_h)/2 - ybuffer*cellSize);
-    pr[i] = new p5.Vector(_x,_y); // random x,y
-    pv[i] = new p5.Vector(0,0);   // no starting velocity
+  // for (let i = 0; i < num_ptc; i++) { 
+  //   let _x = random((_width-rect_w)/2 + lbuffer*cellSize, (_width+rect_w)/2 -   rbuffer*cellSize);
+  //   let _y = random((_height-rect_h)/2 + ybuffer*cellSize, (_height+rect_h)/2 - ybuffer*cellSize);
+  //   pr[i] = new p5.Vector(_x,_y); // random x,y
+  //   pv[i] = new p5.Vector(0,0);   // no starting velocity
+  //   pc[3*i] = 0;
+  //   pc[3*i+1] = 0;
+  //   pc[3*i+2] = 255;
+  // }
+
+  /// ### ///
+
+  
+  // dam break
+  for (let i = 0; i < num_ptc; i++) {
+    pr[i] = new p5.Vector(minX + (i%50)*dMin, maxY - floor(i/50)*dMin);
+    pv[i] = new p5.Vector(0,0);
     pc[3*i] = 0;
     pc[3*i+1] = 0;
     pc[3*i+2] = 255;
   }
-
-  /// ### ///
-
-  /*
-  let _x = (_width-rect_w)/2 + r/2
-  // (_width+rect_w)/2 -   buffer*cellSize);
   
-  let _y = (_height-rect_h)/2;
-  // (_height+rect_h)/2 - buffer*cellSize);
-
-  // dam break
-  for (let i = 0; i < num_ptc; i++) {
-    if (_x >= (_width+rect_w)/2 - rbuffer*cellSize) {
-      _x = (_width-rect_w)/2 + r/2;
-      _y += (1.3*r);
-      if (_y > (_height+rect_h)/2) _y = (_height-rect_h)/2;
-    }
-    // if (_y >= ((_height+rect_h)/2 - buffer*cellSize)) return;
-
-    pr[i] = new p5.Vector(_x+random(-100,100)/100,_y); // random x,y
-    pv[i] = new p5.Vector(0,0);   // no starting velocity
-    _x += (1.3*r);
-  }
-  */
 }
 
 function initVelGrid() {
